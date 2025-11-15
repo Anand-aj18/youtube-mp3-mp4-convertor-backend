@@ -6,73 +6,76 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-app.get("/", (req, res) => {
-  res.json({ status: "ok", name: "youtube-converter-backend", version: "1.0.0" });
-});
+const HEALTH = { status: "ok", name: "youtube-converter-backend", version: "1.0.0" };
+app.get("/", (req, res) => res.json(HEALTH));
 
-/* ------------------------ GET FORMATS ------------------------ */
+/* ✔ Extract YouTube ID from any URL */
+function extractVideoId(url) {
+  const patterns = [
+    /v=([^&]+)/,
+    /youtu\.be\/([^?]+)/,
+    /youtube\.com\/shorts\/([^?]+)/,
+    /youtube\.com\/embed\/([^?]+)/
+  ];
+
+  for (const p of patterns) {
+    const m = url.match(p);
+    if (m) return m[1];
+  }
+  return null;
+}
+
+/* ⭐ GET FORMATS */
 app.post("/getFormats", async (req, res) => {
   try {
     const { url } = req.body;
-    if (!url) return res.status(400).json({ error: "URL missing" });
+    if (!url) return res.status(400).json({ error: "url missing" });
 
-    const api = `https://y2mate.nu/api/convert?url=${encodeURIComponent(url)}`;
+    const id = extractVideoId(url);
+    if (!id) return res.status(400).json({ error: "invalid YouTube url" });
 
-    let out;
-    try {
-      out = await axios.get(api, { timeout: 20000 });
-    } catch (err) {
-      console.error("EXTERNAL API ERROR (getFormats):", err.message);
-      return res.status(500).json({
-        error: "external-api-failed",
-        detail: err.message,
-      });
-    }
+    const api = `https://pipedapi.kavin.rocks/streams/${id}`;
+    const out = await axios.get(api, { timeout: 15000 });
 
-    res.json(out.data);
+    return res.json(out.data);
   } catch (err) {
-    console.error("INTERNAL ERROR (getFormats):", err.message);
-    res.status(500).json({ error: "internal-error", detail: err.message });
+    console.error("GETFORMATS ERROR:", err.message);
+    return res.status(500).json({ error: "failed to fetch formats" });
   }
 });
 
-/* ------------------------ DOWNLOAD ------------------------ */
+/* ⭐ DOWNLOAD (Return direct link only) */
 app.post("/download", async (req, res) => {
   try {
-    const { id, format, qualityKey, url } = req.body;
+    const { url, format } = req.body;
 
-    if (!id && !url)
-      return res.status(400).json({ error: "missing id or url" });
+    if (!url || !format)
+      return res.status(400).json({ error: "url or format missing" });
 
-    let api;
-    if (url) {
-      api = `https://y2mate.nu/api/convert?url=${encodeURIComponent(url)}`;
-    } else {
-      api = `https://y2mate.nu/api/convert?vid=${encodeURIComponent(id)}${
-        qualityKey ? `&k=${qualityKey}` : ""
-      }`;
-    }
+    const id = extractVideoId(url);
+    if (!id) return res.status(400).json({ error: "invalid url" });
 
-    let out;
-    try {
-      out = await axios.get(api, { timeout: 20000 });
-    } catch (err) {
-      console.error("EXTERNAL API ERROR (download):", err.message);
-      return res.status(500).json({
-        error: "external-api-failed",
-        detail: err.message,
-      });
-    }
+    const api = `https://pipedapi.kavin.rocks/streams/${id}`;
+    const out = await axios.get(api, { timeout: 15000 });
 
-    res.json(out.data);
+    const all = [
+      ...out.data.audioStreams,
+      ...out.data.videoStreams
+    ];
+
+    const selected = all.find((x) => x.quality === format || x.audioQuality === format);
+
+    if (!selected)
+      return res.status(404).json({ error: "format not available" });
+
+    return res.json({ downloadUrl: selected.url });
   } catch (err) {
-    console.error("INTERNAL ERROR (download):", err.message);
-    res.status(500).json({ error: "internal-error", detail: err.message });
+    console.error("DOWNLOAD ERROR:", err.message);
+    return res.status(500).json({ error: "download failed" });
   }
 });
 
-/* ------------------------ PORT ------------------------ */
-const port = process.env.PORT || 10000;
-app.listen(port, () => {
-  console.log(`Server running on ${port}`);
-});
+const port = process.env.PORT;
+if (!port) process.exit(1);
+
+app.listen(port, () => console.log(`Server running on ${port}`));
