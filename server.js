@@ -9,13 +9,13 @@ app.use(express.json());
 const HEALTH = { status: "ok", name: "youtube-converter-backend", version: "1.0.0" };
 app.get("/", (req, res) => res.json(HEALTH));
 
-/* ✔ Extract YouTube ID from any URL */
+/* Extract YouTube ID */
 function extractVideoId(url) {
   const patterns = [
     /v=([^&]+)/,
-    /youtu\.be\/([^?&]+)/,
-    /shorts\/([^?&]+)/,
-    /embed\/([^?&]+)/
+    /youtu\.be\/([^?]+)/,
+    /youtube\.com\/shorts\/([^?]+)/,
+    /youtube\.com\/embed\/([^?]+)/
   ];
 
   for (const p of patterns) {
@@ -25,7 +25,7 @@ function extractVideoId(url) {
   return null;
 }
 
-/* ⭐ GET FORMATS */
+/* ⭐ GET FORMATS (safe) */
 app.post("/getFormats", async (req, res) => {
   try {
     const { url } = req.body;
@@ -34,18 +34,11 @@ app.post("/getFormats", async (req, res) => {
     const id = extractVideoId(url);
     if (!id) return res.status(400).json({ error: "invalid YouTube url" });
 
-    const api = `https://pipedapi.kavin.rocks/streams/${id}`;
+    // SAFE API
+    const api = `https://invidious.nerdvpn.de/api/v1/videos/${id}`;
     const out = await axios.get(api, { timeout: 15000 });
 
-    const d = out.data;
-
-    return res.json({
-      title: d.title || "",
-      description: d.description || "",
-      thumbnailUrl: d.thumbnailUrl || "",
-      audioStreams: d.audioStreams || [],
-      videoStreams: d.videoStreams || []
-    });
+    return res.json(out.data);
 
   } catch (err) {
     console.error("GETFORMATS ERROR:", err.message);
@@ -53,7 +46,7 @@ app.post("/getFormats", async (req, res) => {
   }
 });
 
-/* ⭐ DOWNLOAD: return direct stream URL */
+/* ⭐ DOWNLOAD (direct link) */
 app.post("/download", async (req, res) => {
   try {
     const { url, format } = req.body;
@@ -64,16 +57,18 @@ app.post("/download", async (req, res) => {
     const id = extractVideoId(url);
     if (!id) return res.status(400).json({ error: "invalid url" });
 
-    const api = `https://pipedapi.kavin.rocks/streams/${id}`;
+    const api = `https://invidious.nerdvpn.de/api/v1/videos/${id}`;
     const out = await axios.get(api, { timeout: 15000 });
 
+    // All streams combined
     const all = [
-      ...(out.data.audioStreams || []),
-      ...(out.data.videoStreams || [])
+      ...(out.data.adaptiveFormats || []),
+      ...(out.data.formatStreams || [])
     ];
 
-    const selected =
-      all.find((x) => x.quality === format || x.audioQuality === format);
+    const selected = all.find((x) =>
+      x.quality === format || x.type?.includes(format)
+    );
 
     if (!selected)
       return res.status(404).json({ error: "format not available" });
@@ -86,5 +81,7 @@ app.post("/download", async (req, res) => {
   }
 });
 
-const port = process.env.PORT || 3000;
+const port = process.env.PORT;
+if (!port) process.exit(1);
+
 app.listen(port, () => console.log(`Server running on ${port}`));
