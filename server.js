@@ -6,64 +6,73 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const HEALTH = { status: "ok", name: "youtube-converter-backend", version: "1.0.0" };
+app.get("/", (req, res) => {
+  res.json({ status: "ok", name: "youtube-converter-backend", version: "1.0.0" });
+});
 
-app.get("/", (req, res) => res.json(HEALTH));
-
-/**
- * POST /getFormats
- */
+/* ------------------------ GET FORMATS ------------------------ */
 app.post("/getFormats", async (req, res) => {
   try {
     const { url } = req.body;
-    if (!url) return res.status(400).json({ error: "url missing in request body" });
+    if (!url) return res.status(400).json({ error: "URL missing" });
 
-    const external = `https://y2mate.nu/api/convert?url=${encodeURIComponent(url)}`;
-    const out = await axios.get(external, { timeout: 20000 });
+    const api = `https://y2mate.nu/api/convert?url=${encodeURIComponent(url)}`;
 
-    return res.json(out.data);
+    let out;
+    try {
+      out = await axios.get(api, { timeout: 20000 });
+    } catch (err) {
+      console.error("EXTERNAL API ERROR (getFormats):", err.message);
+      return res.status(500).json({
+        error: "external-api-failed",
+        detail: err.message,
+      });
+    }
+
+    res.json(out.data);
   } catch (err) {
-    console.error("GETFORMATS ERROR:", err?.message || err);
-    return res.status(500).json({ error: "failed to fetch formats", detail: err?.message });
+    console.error("INTERNAL ERROR (getFormats):", err.message);
+    res.status(500).json({ error: "internal-error", detail: err.message });
   }
 });
 
-/**
- * POST /download
- */
+/* ------------------------ DOWNLOAD ------------------------ */
 app.post("/download", async (req, res) => {
   try {
     const { id, format, qualityKey, url } = req.body;
 
-    if (!id && !url) {
-      return res.status(400).json({ error: "missing id or url in request body" });
-    }
+    if (!id && !url)
+      return res.status(400).json({ error: "missing id or url" });
 
     let api;
     if (url) {
       api = `https://y2mate.nu/api/convert?url=${encodeURIComponent(url)}`;
     } else {
-      const k = qualityKey ? `&k=${encodeURIComponent(qualityKey)}` : "";
-      api = `https://y2mate.nu/api/convert?vid=${encodeURIComponent(id)}${k}`;
+      api = `https://y2mate.nu/api/convert?vid=${encodeURIComponent(id)}${
+        qualityKey ? `&k=${qualityKey}` : ""
+      }`;
     }
 
-    const out = await axios.get(api, { timeout: 20000 });
-    return res.json(out.data);
+    let out;
+    try {
+      out = await axios.get(api, { timeout: 20000 });
+    } catch (err) {
+      console.error("EXTERNAL API ERROR (download):", err.message);
+      return res.status(500).json({
+        error: "external-api-failed",
+        detail: err.message,
+      });
+    }
+
+    res.json(out.data);
   } catch (err) {
-    console.error("DOWNLOAD ERROR:", err?.message || err);
-    return res.status(500).json({ error: "download proxy failed", detail: err?.message });
+    console.error("INTERNAL ERROR (download):", err.message);
+    res.status(500).json({ error: "internal-error", detail: err.message });
   }
 });
 
-/* 🔴 CRITICAL FIX HERE 🔴 */
-/* Only use process.env.PORT — no fallback */
-const port = process.env.PORT;
-
-if (!port) {
-  console.error("FATAL: Render didn't pass a port.");
-  process.exit(1);
-}
-
+/* ------------------------ PORT ------------------------ */
+const port = process.env.PORT || 10000;
 app.listen(port, () => {
-  console.log(`youtube-converter-backend listening on ${port}`);
+  console.log(`Server running on ${port}`);
 });
