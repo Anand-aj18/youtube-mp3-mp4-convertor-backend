@@ -25,7 +25,7 @@ function extractVideoId(url) {
   return null;
 }
 
-/* ⭐ GET FORMATS (safe) */
+/* ⭐ GET FORMATS (PIPED API – always working) */
 app.post("/getFormats", async (req, res) => {
   try {
     const { url } = req.body;
@@ -34,8 +34,7 @@ app.post("/getFormats", async (req, res) => {
     const id = extractVideoId(url);
     if (!id) return res.status(400).json({ error: "invalid YouTube url" });
 
-    // SAFE API
-    const api = `https://invidious.nerdvpn.de/api/v1/videos/${id}`;
+    const api = `https://pipedapi.kavin.rocks/streams/${id}`;
     const out = await axios.get(api, { timeout: 15000 });
 
     return res.json(out.data);
@@ -46,7 +45,7 @@ app.post("/getFormats", async (req, res) => {
   }
 });
 
-/* ⭐ DOWNLOAD (direct link) */
+/* ⭐ DOWNLOAD – uses direct Piped URL */
 app.post("/download", async (req, res) => {
   try {
     const { url, format } = req.body;
@@ -57,17 +56,16 @@ app.post("/download", async (req, res) => {
     const id = extractVideoId(url);
     if (!id) return res.status(400).json({ error: "invalid url" });
 
-    const api = `https://invidious.nerdvpn.de/api/v1/videos/${id}`;
+    const api = `https://pipedapi.kavin.rocks/streams/${id}`;
     const out = await axios.get(api, { timeout: 15000 });
 
-    // All streams combined
     const all = [
-      ...(out.data.adaptiveFormats || []),
-      ...(out.data.formatStreams || [])
+      ...(out.data.audioStreams || []),
+      ...(out.data.videoStreams || [])
     ];
 
     const selected = all.find((x) =>
-      x.quality === format || x.type?.includes(format)
+      x.quality === format || x.mimeType?.includes(format)
     );
 
     if (!selected)
