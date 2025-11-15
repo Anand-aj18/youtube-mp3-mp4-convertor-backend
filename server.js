@@ -25,7 +25,15 @@ function extractVideoId(url) {
   return null;
 }
 
-/* ⭐ GET FORMATS (PIPED API – always working) */
+/* ⭐ Strong Piped API mirror list */
+const SOURCES = [
+  "https://pipedapi.in.projectsegfau.lt/streams/",
+  "https://pipedapi.syncpundit.io/streams/",
+  "https://pipedapi.fediverse.tv/streams/",
+  "https://pipedapi.nosebs.com/streams/"
+];
+
+/* ⭐ GET FORMATS (with fallback) */
 app.post("/getFormats", async (req, res) => {
   try {
     const { url } = req.body;
@@ -34,18 +42,29 @@ app.post("/getFormats", async (req, res) => {
     const id = extractVideoId(url);
     if (!id) return res.status(400).json({ error: "invalid YouTube url" });
 
-    const api = `https://pipedapi.kavin.rocks/streams/${id}`;
-    const out = await axios.get(api, { timeout: 15000 });
+    let data = null;
 
-    return res.json(out.data);
+    for (const base of SOURCES) {
+      try {
+        const api = `${base}${id}`;
+        const out = await axios.get(api, { timeout: 15000 });
+        data = out.data;
+        break;
+      } catch (e) {
+        console.log("FAILED:", base);
+      }
+    }
+
+    if (!data) return res.status(500).json({ error: "all servers failed" });
+
+    return res.json(data);
 
   } catch (err) {
-    console.error("GETFORMATS ERROR:", err.message);
     return res.status(500).json({ error: "failed to fetch formats" });
   }
 });
 
-/* ⭐ DOWNLOAD – uses direct Piped URL */
+/* ⭐ DOWNLOAD (with fallback mirror support) */
 app.post("/download", async (req, res) => {
   try {
     const { url, format } = req.body;
@@ -56,16 +75,29 @@ app.post("/download", async (req, res) => {
     const id = extractVideoId(url);
     if (!id) return res.status(400).json({ error: "invalid url" });
 
-    const api = `https://pipedapi.kavin.rocks/streams/${id}`;
-    const out = await axios.get(api, { timeout: 15000 });
+    let data = null;
+
+    // 🔥 Try every Piped mirror
+    for (const base of SOURCES) {
+      try {
+        const api = `${base}${id}`;
+        const out = await axios.get(api, { timeout: 15000 });
+        data = out.data;
+        break;
+      } catch (e) {
+        console.log("DOWNLOAD FAILED:", base);
+      }
+    }
+
+    if (!data) return res.status(500).json({ error: "all servers failed" });
 
     const all = [
-      ...(out.data.audioStreams || []),
-      ...(out.data.videoStreams || [])
+      ...(data.audioStreams || []),
+      ...(data.videoStreams || [])
     ];
 
-    const selected = all.find((x) =>
-      x.quality === format || x.mimeType?.includes(format)
+    const selected = all.find(
+      (x) => x.quality === format || x.mimeType?.includes(format)
     );
 
     if (!selected)
@@ -79,6 +111,7 @@ app.post("/download", async (req, res) => {
   }
 });
 
+/* Server start */
 const port = process.env.PORT;
 if (!port) process.exit(1);
 
