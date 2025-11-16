@@ -9,7 +9,9 @@ app.use(express.json());
 const HEALTH = { status: "ok", name: "youtube-converter-backend", version: "1.0.0" };
 app.get("/", (req, res) => res.json(HEALTH));
 
-// Extract YouTube ID
+/* ------------------------------
+   Extract YouTube Video ID
+--------------------------------*/
 function extractVideoId(url) {
   try {
     url = url.trim();
@@ -19,21 +21,26 @@ function extractVideoId(url) {
       /youtube\.com\/shorts\/([^?&]+)/,
       /youtube\.com\/embed\/([^?&]+)/
     ];
+
     for (const p of patterns) {
-      const m = url.match(p);
-      if (m) return m[1];
+      const match = url.match(p);
+      if (match) return match[1];
     }
 
+    // URL fallback
     const u = new URL(url);
     if (u.searchParams.has("v")) return u.searchParams.get("v");
     if (u.hostname.includes("youtu.be")) return u.pathname.slice(1);
-  } catch (e) {
+
+  } catch {
     return null;
   }
   return null;
 }
 
-// Strong Piped mirrors
+/* ------------------------------
+   Reliable Piped Mirrors
+--------------------------------*/
 const SOURCES = [
   "https://pipedapi.in.projectsegfau.lt/streams/",
   "https://pipedapi.syncpundit.io/streams/",
@@ -41,64 +48,89 @@ const SOURCES = [
   "https://pipedapi.nosebs.com/streams/"
 ];
 
-// Get Formats
+/* ------------------------------
+   Get Formats from Piped
+--------------------------------*/
 app.post("/getFormats", async (req, res) => {
   try {
     const { url } = req.body;
+
     if (!url) return res.status(400).json({ error: "url missing" });
 
     const id = extractVideoId(url);
     if (!id) return res.status(400).json({ error: "invalid YouTube url" });
 
-    let data = null;
+    let result = null;
 
     for (const base of SOURCES) {
       try {
-        const out = await axios.get(base + id, { timeout: 15000 });
-        if (out?.data) {
-          data = out.data;
+        const apiURL = base + id;
+        const response = await axios.get(apiURL, { timeout: 10000 });
+
+        if (response.data) {
+          result = response.data;
           break;
         }
-      } catch (e) {
-        console.log("GETFORMATS FAILED:", base, e?.message || e);
+      } catch (err) {
+        console.log("Mirror failed:", base, err.message);
       }
     }
 
-    if (!data) return res.status(500).json({ error: "all servers failed" });
+    if (!result) return res.status(500).json({ error: "All mirrors failed" });
 
-    res.json(data);
+    return res.json(result);
 
-  } catch (err) {
-    res.status(500).json({ error: "failed to fetch formats" });
+  } catch (error) {
+    return res.status(500).json({ error: "Failed to fetch formats" });
   }
 });
 
-// Download wrapper (fixes Android download)
+/* ------------------------------
+   Download File Wrapper
+   Solves browser/Android "Failed - No file"
+--------------------------------*/
 app.post("/downloadFile", async (req, res) => {
   try {
     const { streamUrl, format } = req.body;
 
     if (!streamUrl) return res.status(400).json({ error: "streamUrl missing" });
 
-    const fileName = `youtube.${format || "mp4"}`;
+    // Decode URL (sent encoded from Android)
+    const safeURL = decodeURIComponent(streamUrl);
+
+    const fileName = "youtube." + (format || "mp4");
 
     const response = await axios({
-      url: streamUrl,
+      url: safeURL,
       method: "GET",
-      responseType: "stream"
+      responseType: "stream",
+      headers: {
+        "User-Agent": "Mozilla/5.0"
+      }
     });
 
-    res.setHeader("Content-Type", response.headers["content-type"] || "application/octet-stream");
-    res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+    // Force browser/Android to download
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${fileName}"`
+    );
+    res.setHeader(
+      "Content-Type",
+      response.headers["content-type"] || "application/octet-stream"
+    );
 
     response.data.pipe(res);
 
-  } catch (err) {
-    console.error("DOWNLOAD FILE ERROR:", err?.message || err);
-    return res.status(500).json({ error: "download failed" });
+  } catch (error) {
+    console.error("DOWNLOAD ERROR:", error.message);
+    return res.status(500).json({ error: "Download failed" });
   }
 });
 
-// Start
+/* ------------------------------
+   Start Server
+--------------------------------*/
 const port = process.env.PORT || 10000;
-app.listen(port, () => console.log(`youtube-converter-backend running on ${port}`));
+app.listen(port, () =>
+  console.log(`youtube-converter-backend running on ${port}`)
+);
