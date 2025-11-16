@@ -43,14 +43,16 @@ function extractVideoId(url) {
 }
 
 /* ------------------------------
-   Piped Mirrors (Most Stable)
+   Reliable Piped Mirrors (Render safe)
 --------------------------------*/
 const SOURCES = [
-  "https://pipedapi.in.projectsegfau.lt/streams/",
-  "https://pipedapi.syncpundit.io/streams/",
-  "https://pipedapi.fediverse.tv/streams/",
-  "https://pipedapi.nosebs.com/streams/"
+  "https://pipedapi.adminforge.de/streams/",
+  "https://pipedapi.kavin.rocks/streams/",
+  "https://pipedapi.esmailelbob.xyz/streams/",
+  "https://pipedapi.dedyn.io/streams/",
+  "https://pipedapi.qdi.fi/streams/"
 ];
+
 
 /* ------------------------------
    Fetch Formats
