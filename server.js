@@ -6,6 +6,9 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+/* ------------------------------
+   HEALTH CHECK
+--------------------------------*/
 const HEALTH = { status: "ok", name: "youtube-converter-backend", version: "1.0.0" };
 app.get("/", (req, res) => res.json(HEALTH));
 
@@ -15,6 +18,7 @@ app.get("/", (req, res) => res.json(HEALTH));
 function extractVideoId(url) {
   try {
     url = url.trim();
+
     const patterns = [
       /v=([^&]+)/,
       /youtu\.be\/([^?&]+)/,
@@ -27,19 +31,19 @@ function extractVideoId(url) {
       if (match) return match[1];
     }
 
-    // URL fallback
+    // Fallback
     const u = new URL(url);
     if (u.searchParams.has("v")) return u.searchParams.get("v");
     if (u.hostname.includes("youtu.be")) return u.pathname.slice(1);
-
   } catch {
     return null;
   }
+
   return null;
 }
 
 /* ------------------------------
-   Reliable Piped Mirrors
+   Piped Mirrors (Most Stable)
 --------------------------------*/
 const SOURCES = [
   "https://pipedapi.in.projectsegfau.lt/streams/",
@@ -49,7 +53,7 @@ const SOURCES = [
 ];
 
 /* ------------------------------
-   Get Formats from Piped
+   Fetch Formats
 --------------------------------*/
 app.post("/getFormats", async (req, res) => {
   try {
@@ -81,13 +85,13 @@ app.post("/getFormats", async (req, res) => {
     return res.json(result);
 
   } catch (error) {
+    console.error(error);
     return res.status(500).json({ error: "Failed to fetch formats" });
   }
 });
 
 /* ------------------------------
-   Download File Wrapper
-   Solves browser/Android "Failed - No file"
+   Download File Proxy (Fixes "Failed - No file")
 --------------------------------*/
 app.post("/downloadFile", async (req, res) => {
   try {
@@ -95,7 +99,6 @@ app.post("/downloadFile", async (req, res) => {
 
     if (!streamUrl) return res.status(400).json({ error: "streamUrl missing" });
 
-    // Decode URL (sent encoded from Android)
     const safeURL = decodeURIComponent(streamUrl);
 
     const fileName = "youtube." + (format || "mp4");
@@ -109,7 +112,6 @@ app.post("/downloadFile", async (req, res) => {
       }
     });
 
-    // Force browser/Android to download
     res.setHeader(
       "Content-Disposition",
       `attachment; filename="${fileName}"`
