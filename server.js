@@ -6,11 +6,26 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const HEALTH = { status: "ok", name: "youtube-converter-backend", version: "2.0.0" };
-app.get("/", (req, res) => res.json(HEALTH));
+app.get("/", (req, res) => res.json({ status: "ok" }));
+
+// Extract ID from YouTube links
+function extractVideoId(url) {
+  try {
+    url = url.trim();
+
+    const match =
+      url.match(/v=([^&]+)/) ||
+      url.match(/youtu\.be\/([^?&]+)/) ||
+      url.match(/shorts\/([^?&]+)/);
+
+    return match ? match[1] : null;
+  } catch {
+    return null;
+  }
+}
 
 /* ------------------------------
-   Get YouTube Formats (safe API)
+   GET FORMATS - working API
 --------------------------------*/
 app.post("/getFormats", async (req, res) => {
   try {
@@ -18,40 +33,30 @@ app.post("/getFormats", async (req, res) => {
 
     if (!url) return res.status(400).json({ error: "url missing" });
 
-    const API = `https://ytdl.tandpfun.com/api/info?url=${encodeURIComponent(url)}`;
+    const id = extractVideoId(url);
+    if (!id) return res.status(400).json({ error: "invalid YouTube url" });
 
-    const response = await axios.get(API, { timeout: 15000 });
+    const API_URL = `https://piped.video/api/v1/streams/${id}`;
+
+    const response = await axios.get(API_URL, { timeout: 15000 });
 
     const data = response.data;
 
-    if (!data || !data.formats) {
-      return res.status(500).json({ error: "Failed to fetch formats" });
-    }
-
-    // Separate mp3 and mp4
-    const audioStreams = data.formats.filter(f =>
-      f.mimeType.includes("audio")
-    );
-
-    const videoStreams = data.formats.filter(f =>
-      f.mimeType.includes("video")
-    );
-
     return res.json({
       title: data.title,
-      thumbnailUrl: data.thumbnail,
-      audioStreams,
-      videoStreams
+      thumbnailUrl: data.thumbnailUrl,
+      audioStreams: data.audioStreams,
+      videoStreams: data.videoStreams
     });
 
   } catch (error) {
-    console.log(error.message);
-    return res.status(500).json({ error: "Failed to fetch formats" });
+    console.log("GETFORMATS ERROR:", error.message);
+    res.status(500).json({ error: "Failed to fetch formats" });
   }
 });
 
 /* ------------------------------
-   Stream Download
+   DOWNLOAD FILE
 --------------------------------*/
 app.post("/downloadFile", async (req, res) => {
   try {
@@ -59,7 +64,7 @@ app.post("/downloadFile", async (req, res) => {
 
     if (!streamUrl) return res.status(400).json({ error: "streamUrl missing" });
 
-    const fileName = "youtube." + (format || "mp4");
+    const fileName = `youtube.${format || "mp4"}`;
 
     const response = await axios({
       url: streamUrl,
@@ -72,6 +77,7 @@ app.post("/downloadFile", async (req, res) => {
       "Content-Disposition",
       `attachment; filename="${fileName}"`
     );
+
     res.setHeader(
       "Content-Type",
       response.headers["content-type"] || "application/octet-stream"
@@ -79,11 +85,11 @@ app.post("/downloadFile", async (req, res) => {
 
     response.data.pipe(res);
 
-  } catch (e) {
-    console.log("DOWNLOAD ERROR:", e.message);
+  } catch (error) {
+    console.log("DOWNLOAD ERROR:", error.message);
     res.status(500).json({ error: "Download failed" });
   }
 });
 
 const port = process.env.PORT || 10000;
-app.listen(port, () => console.log(`Backend running on ${port}`));
+app.listen(port, () => console.log("Backend running on " + port));
