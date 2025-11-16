@@ -1,7 +1,7 @@
 {
   "name": "youtube-converter-backend",
   "version": "1.0.0",
-  "description": "Simple backend wrapper for YouTube conversion (Option A) - ready for Render.com",
+  "description": "Backend proxy (Option A) - returns direct piped stream URLs",
   "main": "server.js",
   "type": "module",
   "scripts": {
